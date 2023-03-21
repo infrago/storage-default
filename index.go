@@ -1,6 +1,7 @@
 package store_default
 
 import (
+	"github.com/infrago/infra"
 	"github.com/infrago/store"
 )
 
@@ -9,5 +10,5 @@ func Driver() store.Driver {
 }
 
 func init() {
-	store.Register("default", Driver())
+	infra.Register("default", Driver())
 }
