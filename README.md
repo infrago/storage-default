@@ -1,2 +1,2 @@
 # store-default
-infra.go default store driver.
+infra.Go default store driver.
