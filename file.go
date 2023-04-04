@@ -1,4 +1,4 @@
-package store_default
+package storage_default
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	. "github.com/infrago/base"
-	"github.com/infrago/store"
+	"github.com/infrago/storage"
 	"github.com/infrago/util"
 )
 
@@ -25,9 +25,9 @@ type (
 	defaultDriver  struct{}
 	defaultConnect struct {
 		mutex  sync.RWMutex
-		health store.Health
+		health storage.Health
 
-		instance *store.Instance
+		instance *storage.Instance
 
 		setting defaultSetting
 	}
@@ -37,7 +37,7 @@ type (
 )
 
 // 连接
-func (driver *defaultDriver) Connect(instance *store.Instance) (store.Connect, error) {
+func (driver *defaultDriver) Connect(instance *storage.Instance) (storage.Connect, error) {
 	setting := defaultSetting{
 		Storage: "store/storage",
 	}
@@ -57,7 +57,7 @@ func (this *defaultConnect) Open() error {
 	return nil
 }
 
-func (this *defaultConnect) Health() store.Health {
+func (this *defaultConnect) Health() storage.Health {
 	this.mutex.RLock()
 	defer this.mutex.RUnlock()
 	return this.health
@@ -68,7 +68,7 @@ func (this *defaultConnect) Close() error {
 	return nil
 }
 
-func (this *defaultConnect) Upload(target string, metadata Map) (store.File, store.Files, error) {
+func (this *defaultConnect) Upload(target string, metadata Map) (storage.File, storage.Files, error) {
 	stat, err := os.Stat(target)
 	if err != nil {
 		return nil, nil, err
@@ -82,7 +82,7 @@ func (this *defaultConnect) Upload(target string, metadata Map) (store.File, sto
 			return nil, nil, err
 		}
 
-		files := store.Files{}
+		files := storage.Files{}
 		for _, file := range dirs {
 			if !file.IsDir() {
 
@@ -123,7 +123,7 @@ func (this *defaultConnect) Upload(target string, metadata Map) (store.File, sto
 	}
 }
 
-func (this *defaultConnect) Download(file store.File) (string, error) {
+func (this *defaultConnect) Download(file storage.File) (string, error) {
 	///直接返回本地文件存储
 	_, sFile, err := this.storaging(file)
 	if err != nil {
@@ -132,7 +132,7 @@ func (this *defaultConnect) Download(file store.File) (string, error) {
 	return sFile, nil
 }
 
-func (this *defaultConnect) Remove(file store.File) error {
+func (this *defaultConnect) Remove(file storage.File) error {
 	_, sFile, err := this.storaging(file)
 	if err != nil {
 		return err
@@ -141,13 +141,13 @@ func (this *defaultConnect) Remove(file store.File) error {
 	return os.Remove(sFile)
 }
 
-func (this *defaultConnect) Browse(file store.File, query Map, expirs time.Duration) (string, error) {
+func (this *defaultConnect) Browse(file storage.File, query Map, expirs time.Duration) (string, error) {
 	return "", errBrowseNotSupported
 }
 
 //-------------------- defaultBase end -------------------------
 
-func (this *defaultConnect) storage(source string, coding store.File) error {
+func (this *defaultConnect) storage(source string, coding storage.File) error {
 	_, sFile, err := this.storaging(coding)
 	if err != nil {
 		return err
@@ -181,7 +181,7 @@ func (this *defaultConnect) storage(source string, coding store.File) error {
 	return nil
 }
 
-func (this *defaultConnect) storaging(file store.File) (string, string, error) {
+func (this *defaultConnect) storaging(file storage.File) (string, string, error) {
 	//使用hash的hex hash 的前4位，生成2级目录
 	//共256*256个目录
 	hash := util.Sha256(file.Hash())
