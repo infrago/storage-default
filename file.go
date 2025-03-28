@@ -33,6 +33,11 @@ type (
 	defaultSetting struct {
 		Storage string
 	}
+
+	rangeFileReader struct {
+		file   *os.File
+		reader *io.SectionReader
+	}
 )
 
 // 连接
@@ -143,6 +148,26 @@ func (this *defaultConnect) Fetch(file storage.File, opt storage.FetchOption) (s
 	fff, err := os.Open(sFile)
 	if err != nil {
 		return nil, err
+	}
+
+	//如果指定范围
+	if opt.Start > 0 || opt.End > 0 {
+		stat, err := fff.Stat()
+		if err != nil {
+			return nil, err
+		}
+
+		size := stat.Size()
+		if opt.End == 0 {
+			opt.End = size
+		}
+		length := opt.End - opt.Start
+
+		sectionReader := io.NewSectionReader(fff, opt.Start, length)
+		return &RangeFileReader{
+			file:   fff,
+			reader: sectionReader,
+		}, nil
 	}
 
 	return fff, nil
