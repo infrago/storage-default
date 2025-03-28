@@ -67,7 +67,7 @@ func (this *defaultConnect) Close() error {
 	return nil
 }
 
-func (this *defaultConnect) Upload(orginal string, opts ...storage.Option) (string, error) {
+func (this *defaultConnect) Upload(orginal string, opt storage.UploadOption) (string, error) {
 	stat, err := os.Stat(orginal)
 	if err != nil {
 		return "", err
@@ -78,26 +78,21 @@ func (this *defaultConnect) Upload(orginal string, opts ...storage.Option) (stri
 		return "", errors.New("directory upload not supported")
 	}
 
-	opt := storage.Option{}
-	if len(opts) > 0 {
-		opt = opts[0]
-	}
-
 	ext := util.Extension(orginal)
 
 	if opt.Key == "" {
 		//如果没有指定key，使用文件的hash
 		//使用hash的前4位，生成2级目录
 		hash, hex := this.filehash(orginal)
-		if opt.Root == "" {
-			opt.Root = path.Join(hex[0:2], hex[2:4])
+		if opt.Prefix == "" {
+			opt.Prefix = path.Join(hex[0:2], hex[2:4])
 		} else {
-			opt.Root = path.Join(opt.Root, hex[0:2], hex[2:4])
+			opt.Prefix = path.Join(opt.Prefix, hex[0:2], hex[2:4])
 		}
 		opt.Key = hash
 	}
 
-	file := this.instance.File(opt.Root, opt.Key, ext, stat.Size())
+	file := this.instance.File(opt.Prefix, opt.Key, ext, stat.Size())
 	if file == nil {
 		return "", errors.New("create file error")
 	}
@@ -137,7 +132,7 @@ func (this *defaultConnect) Upload(orginal string, opts ...storage.Option) (stri
 	return file.Code(), nil
 }
 
-func (this *defaultConnect) Fetch(file storage.File, opts ...storage.Option) (storage.Stream, error) {
+func (this *defaultConnect) Fetch(file storage.File, opt storage.FetchOption) (storage.Stream, error) {
 	///直接返回本地文件存储
 	_, sFile, err := this.filepath(file)
 	if err != nil {
@@ -153,7 +148,7 @@ func (this *defaultConnect) Fetch(file storage.File, opts ...storage.Option) (st
 	return fff, nil
 }
 
-func (this *defaultConnect) Download(file storage.File, opts ...storage.Option) (string, error) {
+func (this *defaultConnect) Download(file storage.File, opt storage.DownloadOption) (string, error) {
 	///直接返回本地文件存储
 	_, sFile, err := this.filepath(file)
 	if err != nil {
@@ -162,7 +157,7 @@ func (this *defaultConnect) Download(file storage.File, opts ...storage.Option) 
 	return sFile, nil
 }
 
-func (this *defaultConnect) Remove(file storage.File) error {
+func (this *defaultConnect) Remove(file storage.File, opt storage.RemoveOption) error {
 	_, sFile, err := this.filepath(file)
 	if err != nil {
 		return err
@@ -171,7 +166,7 @@ func (this *defaultConnect) Remove(file storage.File) error {
 	return os.Remove(sFile)
 }
 
-func (this *defaultConnect) Browse(file storage.File, opts ...storage.Option) (string, error) {
+func (this *defaultConnect) Browse(file storage.File, opt storage.BrowseOption) (string, error) {
 	return "", errBrowseNotSupported
 }
 
@@ -187,7 +182,7 @@ func (this *defaultConnect) filepath(file storage.File) (string, string, error) 
 		name = fmt.Sprintf("%s.%s", file.Key(), file.Type())
 	}
 
-	sfile := path.Join(this.setting.Storage, file.Root(), name)
+	sfile := path.Join(this.setting.Storage, file.Prefix(), name)
 	spath := path.Dir(sfile)
 
 	// //创建目录
