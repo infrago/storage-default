@@ -1,16 +1,15 @@
 package storage_default
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
-	"time"
 
-	. "github.com/infrago/base"
 	"github.com/infrago/storage"
 	"github.com/infrago/util"
 )
@@ -68,64 +67,95 @@ func (this *defaultConnect) Close() error {
 	return nil
 }
 
-func (this *defaultConnect) Upload(target string, metadata Map) (storage.File, storage.Files, error) {
-	stat, err := os.Stat(target)
+func (this *defaultConnect) Upload(orginal string, opts ...storage.Option) (string, error) {
+	stat, err := os.Stat(orginal)
 	if err != nil {
-		return nil, nil, err
+		return "", err
 	}
 
-	//是目录
+	//250327不再支持目录上传
 	if stat.IsDir() {
-
-		dirs, err := ioutil.ReadDir(target)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		files := storage.Files{}
-		for _, file := range dirs {
-			if !file.IsDir() {
-
-				source := path.Join(target, file.Name())
-				hash := this.instance.Hash(source)
-				if hash == "" {
-					return nil, nil, errors.New("hash error")
-				}
-
-				info := this.instance.File(hash, source, file.Size())
-
-				err := this.storage(source, info)
-				if err != nil {
-					return nil, nil, err
-				}
-
-				files = append(files, info)
-			}
-		}
-
-		return nil, files, nil
-
-	} else {
-
-		hash := this.instance.Hash(target)
-		if hash == "" {
-			return nil, nil, errors.New("hash error")
-		}
-
-		file := this.instance.File(hash, target, stat.Size())
-
-		err := this.storage(target, file)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return file, nil, nil
+		return "", errors.New("directory upload not supported")
 	}
+
+	opt := storage.Option{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	ext := util.Extension(orginal)
+
+	if opt.Key == "" {
+		//如果没有指定key，使用文件的hash
+		//使用hash的前4位，生成2级目录
+		hash, hex := this.filehash(orginal)
+		if opt.Root == "" {
+			opt.Root = path.Join(hex[0:2], hex[2:4])
+		} else {
+			opt.Root = path.Join(opt.Root, hex[0:2], hex[2:4])
+		}
+		opt.Key = hash
+	}
+
+	file := this.instance.File(opt.Root, opt.Key, ext, stat.Size())
+	if file == nil {
+		return "", errors.New("create file error")
+	}
+
+	//
+	_, sFile, err := this.filepath(file)
+	if err != nil {
+		return "", err
+	}
+
+	//如果文件已经存在，直接返回
+	//250327 更新，文件存在也覆盖
+	// if _, err := os.Stat(sFile); err == nil {
+	// 	return nil
+	// }
+
+	//打开原始文件
+	fff, err := os.Open(orginal)
+	if err != nil {
+		return "", err
+	}
+	defer fff.Close()
+
+	//创建文件
+	save, err := os.OpenFile(sFile, os.O_WRONLY|os.O_CREATE, 0777)
+	if err != nil {
+		return "", err
+	}
+	defer save.Close()
+
+	//复制文件
+	_, err = io.Copy(save, fff)
+	if err != nil {
+		return "", err
+	}
+
+	return file.Code(), nil
 }
 
-func (this *defaultConnect) Download(file storage.File) (string, error) {
+func (this *defaultConnect) Fetch(file storage.File, opts ...storage.Option) (storage.Stream, error) {
 	///直接返回本地文件存储
-	_, sFile, err := this.storaging(file)
+	_, sFile, err := this.filepath(file)
+	if err != nil {
+		return nil, err
+	}
+
+	//打开文件
+	fff, err := os.Open(sFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return fff, nil
+}
+
+func (this *defaultConnect) Download(file storage.File, opts ...storage.Option) (string, error) {
+	///直接返回本地文件存储
+	_, sFile, err := this.filepath(file)
 	if err != nil {
 		return "", err
 	}
@@ -133,7 +163,7 @@ func (this *defaultConnect) Download(file storage.File) (string, error) {
 }
 
 func (this *defaultConnect) Remove(file storage.File) error {
-	_, sFile, err := this.storaging(file)
+	_, sFile, err := this.filepath(file)
 	if err != nil {
 		return err
 	}
@@ -141,59 +171,24 @@ func (this *defaultConnect) Remove(file storage.File) error {
 	return os.Remove(sFile)
 }
 
-func (this *defaultConnect) Browse(file storage.File, query Map, expirs time.Duration) (string, error) {
+func (this *defaultConnect) Browse(file storage.File, opts ...storage.Option) (string, error) {
 	return "", errBrowseNotSupported
 }
 
 //-------------------- defaultBase end -------------------------
 
-func (this *defaultConnect) storage(source string, coding storage.File) error {
-	_, sFile, err := this.storaging(coding)
-	if err != nil {
-		return err
-	}
-
-	//如果文件已经存在，直接返回
-	if _, err := os.Stat(sFile); err == nil {
-		return nil
-	}
-
-	//打开原始文件
-	fff, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer fff.Close()
-
-	//创建文件
-	save, err := os.OpenFile(sFile, os.O_WRONLY|os.O_CREATE, 0777)
-	if err != nil {
-		return err
-	}
-	defer save.Close()
-
-	//复制文件
-	_, err = io.Copy(save, fff)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (this *defaultConnect) storaging(file storage.File) (string, string, error) {
+// filepath 生成存储路径
+func (this *defaultConnect) filepath(file storage.File) (string, string, error) {
 	//使用hash的hex hash 的前4位，生成2级目录
 	//共256*256个目录
-	hash := util.Sha256(file.Hash())
-	hashPath := path.Join(hash[0:2], hash[2:4])
 
-	full := file.Hash()
+	name := file.Key()
 	if file.Type() != "" {
-		full = fmt.Sprintf("%s.%s", file.Hash(), file.Type())
+		name = fmt.Sprintf("%s.%s", file.Key(), file.Type())
 	}
 
-	spath := path.Join(this.setting.Storage, hashPath)
-	sfile := path.Join(spath, full)
+	sfile := path.Join(this.setting.Storage, file.Root(), name)
+	spath := path.Dir(sfile)
 
 	// //创建目录
 	err := os.MkdirAll(spath, 0777)
@@ -202,4 +197,18 @@ func (this *defaultConnect) storaging(file storage.File) (string, string, error)
 	}
 
 	return spath, sfile, nil
+}
+
+// 算文件的hash
+func (this *defaultConnect) filehash(file string) (string, string) {
+	if f, e := os.Open(file); e == nil {
+		defer f.Close()
+		h := sha1.New()
+		if _, e := io.Copy(h, f); e == nil {
+			hex := fmt.Sprintf("%x", h.Sum(nil))
+			hash := base64.URLEncoding.EncodeToString(h.Sum(nil))
+			return hash, hex
+		}
+	}
+	return "", ""
 }
