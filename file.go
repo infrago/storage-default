@@ -72,15 +72,15 @@ func (this *defaultConnect) Close() error {
 	return nil
 }
 
-func (this *defaultConnect) Upload(orginal string, opt storage.UploadOption) (string, error) {
+func (this *defaultConnect) Upload(orginal string, opt storage.UploadOption) (*storage.File, error) {
 	stat, err := os.Stat(orginal)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	//250327不再支持目录上传
 	if stat.IsDir() {
-		return "", errors.New("directory upload not supported")
+		return nil, errors.New("directory upload not supported")
 	}
 
 	ext := util.Extension(orginal)
@@ -99,13 +99,13 @@ func (this *defaultConnect) Upload(orginal string, opt storage.UploadOption) (st
 
 	file := this.instance.File(opt.Prefix, opt.Key, ext, stat.Size())
 	if file == nil {
-		return "", errors.New("create file error")
+		return nil, errors.New("create file error")
 	}
 
 	//
 	_, sFile, err := this.filepath(file)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	//如果文件已经存在，直接返回
@@ -117,27 +117,27 @@ func (this *defaultConnect) Upload(orginal string, opt storage.UploadOption) (st
 	//打开原始文件
 	fff, err := os.Open(orginal)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer fff.Close()
 
 	//创建文件
 	save, err := os.OpenFile(sFile, os.O_WRONLY|os.O_CREATE, 0777)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer save.Close()
 
 	//复制文件
 	_, err = io.Copy(save, fff)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return file.Code(), nil
+	return file, nil
 }
 
-func (this *defaultConnect) Fetch(file storage.File, opt storage.FetchOption) (storage.Stream, error) {
+func (this *defaultConnect) Fetch(file *storage.File, opt storage.FetchOption) (storage.Stream, error) {
 	///直接返回本地文件存储
 	_, sFile, err := this.filepath(file)
 	if err != nil {
@@ -173,7 +173,7 @@ func (this *defaultConnect) Fetch(file storage.File, opt storage.FetchOption) (s
 	return fff, nil
 }
 
-func (this *defaultConnect) Download(file storage.File, opt storage.DownloadOption) (string, error) {
+func (this *defaultConnect) Download(file *storage.File, opt storage.DownloadOption) (string, error) {
 	///直接返回本地文件存储
 	_, sFile, err := this.filepath(file)
 	if err != nil {
@@ -182,7 +182,7 @@ func (this *defaultConnect) Download(file storage.File, opt storage.DownloadOpti
 	return sFile, nil
 }
 
-func (this *defaultConnect) Remove(file storage.File, opt storage.RemoveOption) error {
+func (this *defaultConnect) Remove(file *storage.File, opt storage.RemoveOption) error {
 	_, sFile, err := this.filepath(file)
 	if err != nil {
 		return err
@@ -191,14 +191,14 @@ func (this *defaultConnect) Remove(file storage.File, opt storage.RemoveOption) 
 	return os.Remove(sFile)
 }
 
-func (this *defaultConnect) Browse(file storage.File, opt storage.BrowseOption) (string, error) {
+func (this *defaultConnect) Browse(file *storage.File, opt storage.BrowseOption) (string, error) {
 	return "", errBrowseNotSupported
 }
 
 //-------------------- defaultBase end -------------------------
 
 // filepath 生成存储路径
-func (this *defaultConnect) filepath(file storage.File) (string, string, error) {
+func (this *defaultConnect) filepath(file *storage.File) (string, string, error) {
 	//使用hash的hex hash 的前4位，生成2级目录
 	//共256*256个目录
 
